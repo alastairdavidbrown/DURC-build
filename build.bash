@@ -11,17 +11,20 @@ declare -i DEBUG_LEVEL=$DB_TRACE
 
 # Locations
 declare ROOT_LOC=`pwd`
-declare APP_NAME=durc-express
+#declare APP_NAME=durc-app
 declare MONGO_ROOT=durc-db
 declare NODE_DEBUG=node-debug
 declare DB_BACKUP=backups
 declare MONGO_DATA_APP=app-data/db
 declare MONGO_DATA_UPTIME=uptime-data/db
-declare SOURCE_LOC=./source
+declare SOURCE_ROOT=./source
+declare SOURCE_APP=durc-app
 declare UPTIME_LOC=./uptime
 declare MONGO_DURC_PORT=27017
 declare MONGO_UPTIME_PORT=27019
-	
+
+# Registration Service config
+declare SVC_REGISTRATION_NAME=svc-registration
 
 # Names
 declare MONGO=mongodb-osx-x86_64-3.0.3
@@ -42,14 +45,14 @@ function debug
 function copy-content
 {
 
-	cp -r $SOURCE_LOC/* $ROOT_LOC/$APP_NAME/.
+	cp -r $SOURCE_ROOT/$APP_NAME/* $ROOT_LOC/$APP_NAME/.
 
 }
 
 function clean 
 {
 
-	for loc in $APP_NAME $MONGO_ROOT $UPTIME_LOC
+	for loc in $APP_NAME $MONGO_ROOT $UPTIME_LOC $SVC_REGISTRATION_NAME $NODE_DEBUG
 	do
 		# If the location is set and exists remove it (avoid unexpected disappointment if location is unset
 		if [ $loc ] && [ -d $loc ]
@@ -74,17 +77,25 @@ function start-node
 	node server.js &
 }
 
-function build-app-local
+function build-common
 {
 	# Make the app dir and copy the package.json
-	mkdir $APP_NAME
+	mkdir $1
 
-	# Copy the pagkage.json to the appi	
-	cp source/package.json $APP_NAME
+	# Copy the pagkage.json to the app
+	cp $SOURCE_ROOT/$1/package.json $1
 
 	# Install the node packages
-	cd $APP_NAME
+	cd $1
 	npm install
+
+}
+
+function build-app-local
+{
+
+	# Do the build that's common  to all apps
+	build-common $APP_NAME
 
 	#make the public dir and copy the bootstrap dist
 	mkdir public
@@ -109,7 +120,7 @@ function build-app-heroku
 	heroku config:set DB_URL_APP=$DB_URL_APP --app durc #set the DB_URL_APP
 
 	# push the code 
-	cd $SOURCE_LOC
+	cd $SOURCE_ROOT/$APP_NAME
 	git push heroku master 
 
 	# create the admin user note params differ for local and heroku so 
@@ -153,7 +164,7 @@ function create-app-user
 {
 
 	cd $ROOT_LOC
-	$MONGO_ROOT/bin/mongo $DB_APP source/data/scripts/create-app-user.js 
+	$MONGO_ROOT/bin/mongo $DB_APP $SOURCE_ROOT/$APP_NAME/data/scripts/create-app-user.js 
 }
 
 function remove-content
@@ -177,17 +188,17 @@ function insert-content
 	else
 		cd $ROOT_LOC
 		$MONGO_ROOT/bin/mongo $DB_APP -u $DB_APP_USER -p $DB_APP_PASS \
-			source/data/scripts/create-app-content-home.js
+			$APP_NAME/data/scripts/create-app-content-home.js
 		$MONGO_ROOT/bin/mongo $DB_APP -u $DB_APP_USER -p $DB_APP_PASS \
-			source/data/scripts/create-app-content-events.js
+			$APP_NAME/data/scripts/create-app-content-events.js
 		$MONGO_ROOT/bin/mongo $DB_APP -u $DB_APP_USER -p $DB_APP_PASS \
-			source/data/scripts/create-app-content-community.js
+			$APP_NAME/data/scripts/create-app-content-community.js
 		$MONGO_ROOT/bin/mongo $DB_APP -u $DB_APP_USER -p $DB_APP_PASS \
-			source/data/scripts/create-app-content-vision.js
+			$APP_NAME/data/scripts/create-app-content-vision.js
 		$MONGO_ROOT/bin/mongo $DB_APP -u $DB_APP_USER -p $DB_APP_PASS \
-			source/data/scripts/create-app-content-types.js
+			$APP_NAME/data/scripts/create-app-content-types.js
 		$MONGO_ROOT/bin/mongo $DB_APP -u $DB_APP_USER -p $DB_APP_PASS \
-			source/data/scripts/create-app-content-hire.js
+			$APP_NAME/data/scripts/create-app-content-hire.js
 	fi
 	
 }
@@ -205,7 +216,7 @@ function install-uptime
 
 	# Copy over the install
 	echo "copying uptime config"
-	cp $SOURCE_LOC/config/defaul-uptime.yaml $UPTIME_LOC/config/default.yaml
+	cp $SOURCE_ROOT/$APP_NAME/config/defaul-uptime.yaml $UPTIME_LOC/config/default.yaml
 	
 }
 
@@ -324,6 +335,16 @@ function set-env-local
 	set-env-common
 }
 
+function set-app-durc
+{
+	export APP_NAME='durc-app'
+}
+
+function set-app-registration
+{
+	export APP_NAME='svc-registration'
+}
+
 function set-env-heroku
 {
        # get the mongo URI
@@ -351,6 +372,7 @@ function set-env-heroku
 function set-env-common
 {
 	export PORT=8080
+	export SVC_PORT_REGISTRATION=8090
 	export DB_APP=`echo $DB_URL_APP | sed 's/.*@//'`
 	export DB_HOST=`echo $DB_APP | sed 's/:.*//'`
 	export DB_PORT=`echo $DB_APP | sed 's/.*://' | sed 's/\/.*//'`
@@ -414,5 +436,13 @@ function backup-mongo
 # Call the function that matches the first parameters name
 #set-env-local
 #set-env-heroku
-
+# Check that an environemnt (local|heroku) is set 
+# as is an APP to build (durc-app|svc-registration
+if [ -z $APP_NAME ] || [ -z $DB_URL_APP ]
+then
+	echo "APP_NAME and DB_URL_APP unset, defaulting to local durc-app"
+	set-env-local
+	set-app-durc
+fi
 ${1} $@
+echo "Operation completed on $APP_NAME"
