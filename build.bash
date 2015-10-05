@@ -11,14 +11,12 @@ declare -i DEBUG_LEVEL=$DB_TRACE
 
 # Locations
 declare ROOT_LOC=`pwd`
-#declare APP_NAME=durc-app
 declare MONGO_ROOT=durc-db
 declare NODE_DEBUG=node-debug
 declare DB_BACKUP=backups
 declare MONGO_DATA_APP=app-data/db
 declare MONGO_DATA_UPTIME=uptime-data/db
 declare SOURCE_ROOT=./source
-declare SOURCE_APP=durc-app
 declare UPTIME_LOC=./uptime
 declare MONGO_DURC_PORT=27017
 declare MONGO_UPTIME_PORT=27019
@@ -45,6 +43,7 @@ function debug
 function copy-content
 {
 
+	# copy the source to the server
 	cp -r $SOURCE_ROOT/$APP_NAME/* $ROOT_LOC/$APP_NAME/.
 
 }
@@ -74,7 +73,7 @@ function cycle-node
 function start-node
 {
 	cd $APP_NAME
-	node server.js &
+	node $APP_NAME-server.js &
 }
 
 function build-common
@@ -99,7 +98,12 @@ function build-app-local
 
 	#make the public dir and copy the bootstrap dist
 	mkdir public
-	cp -r node_modules/bootstrap/dist public/.
+	
+	# if the app required bootstrap copy the distrinution
+	if [ -d node_modules/bootstrap/dist ]
+	then
+		cp -r node_modules/bootstrap/dist public/.
+	fi
 }
 
 function clean-heroku
@@ -299,7 +303,7 @@ function start-mongo
 
 function stop-node
 {
-	stop-proc node
+	stop-proc $APP_NAME-server.js
 }
 
 function stop-mongo
@@ -337,12 +341,26 @@ function set-env-local
 
 function set-app-durc
 {
-	export APP_NAME='durc-app'
+	export PORT=8080
+	export APP_NAME='durc'
 }
 
-function set-app-registration
+function set-app-auth
 {
-	export APP_NAME='svc-registration'
+	export PORT=8082
+	export APP_NAME='auth'
+}
+
+function set-app-regi
+{
+	export PORT=8081
+	export APP_NAME='regi'
+}
+
+function set-app-grub
+{
+	export PORT=8083
+	export APP_NAME='grub'
 }
 
 function set-env-heroku
@@ -371,8 +389,6 @@ function set-env-heroku
 
 function set-env-common
 {
-	export PORT=8080
-	export SVC_PORT_REGISTRATION=8090
 	export DB_APP=`echo $DB_URL_APP | sed 's/.*@//'`
 	export DB_HOST=`echo $DB_APP | sed 's/:.*//'`
 	export DB_PORT=`echo $DB_APP | sed 's/.*://' | sed 's/\/.*//'`
