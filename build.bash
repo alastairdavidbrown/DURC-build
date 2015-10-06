@@ -9,16 +9,21 @@ declare -i DB_INFO=2
 declare -i DB_OFF=0
 declare -i DEBUG_LEVEL=$DB_TRACE
 
-# Locations
+# Generic logicals
 declare ROOT_LOC=`pwd`
-declare MONGO_ROOT=durc-db
+declare MONGO_ROOT=mongo
 declare NODE_DEBUG=node-debug
 declare DB_BACKUP=backups
-declare MONGO_DATA_APP=app-data/db
-declare MONGO_DATA_UPTIME=uptime-data/db
 declare SOURCE_ROOT=./source
+
+# durc logicals
+
+# grub locigals
+declare MONGO_DATA_GRUB=grub-data/db
+declare MONGO_DATA_UPTIME=uptime-data/db
 declare UPTIME_LOC=./uptime
 declare MONGO_DURC_PORT=27017
+declare MONGO_GRUB_PORT=27018
 declare MONGO_UPTIME_PORT=27019
 
 # Registration Service config
@@ -51,16 +56,15 @@ function copy-content
 function clean 
 {
 
-	for loc in $APP_NAME $MONGO_ROOT $UPTIME_LOC $SVC_REGISTRATION_NAME $NODE_DEBUG
-	do
-		# If the location is set and exists remove it (avoid unexpected disappointment if location is unset
-		if [ $loc ] && [ -d $loc ]
-		then
-			
-			debug $DB_INFO "Removing $loc"
-			rm -fr $loc
-		fi 
-	done
+	# If the location is set and exists remove it 
+	# avoid unexpected disappointment if location is unset
+	if [ $APP_NAME ] && [ -d $APP_NAME ]
+	then
+		debug $DB_INFO "Removing $APP_NAME"
+		rm -fr $APP_NAME
+	else
+		echo "APP_NAME not set or $APP_NAME doesn not exist"
+	fi
 }
 
 function cycle-node
@@ -158,11 +162,16 @@ function install-mongo-local
 	mv -n $MONGO/* .
 	rmdir $MONGO
 
-	mkdir -p $MONGO_DATA_APP
-	mkdir -p $MONGO_DATA_UPTIME
 	cd $ROOT_LOC
 
 }
+
+function create-mongo-db
+{
+	cd $MONGO_ROOT
+	mkdir -p $MONGO_DATA_LOC
+}
+
 
 function create-app-user
 {
@@ -282,15 +291,15 @@ function start-mongo-all
 {
 
 	# The application mongo instance
-	start-mongo $MONGO_DURC_PORT $MONGO_ROOT/$MONGO_DATA_APP mongo-durc.log
+	start-mongo-1 $MONGO_DURC_PORT $MONGO_ROOT/$MONGO_DATA_DURC mongo-durc.log
 	
 	# The uptime mongo instance
-	start-mongo $MONGO_UPTIME_PORT $MONGO_ROOT/$MONGO_DATA_UPTIME mongo-uptime.log --setParameter authenticationMechanisms=MONGODB-CR --auth
+	start-mongo-1 $MONGO_UPTIME_PORT $MONGO_ROOT/$MONGO_DATA_UPTIME mongo-uptime.log --setParameter authenticationMechanisms=MONGODB-CR --auth
 
 	#ps -ef | egrep -i mongod | egrep -v egrep 
 }
 
-function start-mongo
+function start-mongo-1
 {
 	# HACK work out how manay params there are rather than assume
 	# Expect $1: port $2 dbpath $3 log $4,5 (if set) any other options
@@ -298,6 +307,15 @@ function start-mongo
 	$MONGO_ROOT/bin/mongod --port $1 \
 		--rest \
 		--dbpath $2 $4 $5 $6 > $3 2>&1 &
+
+}
+
+function start-mongo
+{
+	$MONGO_ROOT/bin/mongod --port $MONGO_PORT \
+		--rest \
+		--dbpath $MONGO_ROOT/$MONGO_DATA_LOC $4 $5 $6 \
+		> mongo-$APP_NAME.log  2>&1 &
 
 }
 
@@ -330,25 +348,35 @@ function set-env-local
 {
 	echo "... environment is local" 
 	# components 
-	export DB_APP=localhost:27017/durc-db
-	export DB_APP_USER=durc
-	export DB_APP_PASS=durc
-	export DB_NAME=durc-db
+	export DB_APP=localhost:$MONGO_PORT/$APP_NAME
+	export DB_NAME=$APP_NAME
 	export DB_URL_APP=mongodb://$DB_APP_USER:$DB_APP_PASS@$DB_APP
 	export ENV=dev
 	set-env-common
 }
 
+# grub locigals
+declare UPTIME_LOC=./uptime
+declare MONGO_UPTIME_PORT=27019
+
 function set-app-durc
 {
 	export PORT=8080
 	export APP_NAME='durc'
+        export MONGO_APP_USER=durc
+        export MONGO_APP_PASS=durc
+	export MONGO_PORT=27017
+	export MONGO_DATA_LOC=durc-data/db
 }
 
 function set-app-auth
 {
 	export PORT=8082
 	export APP_NAME='auth'
+        export MONGO_APP_USER=auth
+        export MONGO_APP_PASS=auth
+	export MONGO_PORT=27018
+	export MONGO_DATA_LOC=auth-data/db
 }
 
 function set-app-regi
@@ -361,6 +389,10 @@ function set-app-grub
 {
 	export PORT=8083
 	export APP_NAME='grub'
+        export MONGO_APP_USER=grub
+        export MONGO_APP_PASS=grub
+	export MONGO_PORT=27019
+	export MONGO_DATA_LOC=grub-data/db
 }
 
 function set-env-heroku
@@ -453,7 +485,7 @@ function backup-mongo
 #set-env-local
 #set-env-heroku
 # Check that an environemnt (local|heroku) is set 
-# as is an APP to build (durc-app|svc-registration
+# as is an APP to build 
 if [ -z $APP_NAME ] || [ -z $DB_URL_APP ]
 then
 	echo "APP_NAME and DB_URL_APP unset, defaulting to local durc-app"
