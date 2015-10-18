@@ -10,11 +10,15 @@ declare -i DB_OFF=0
 declare -i DEBUG_LEVEL=$DB_TRACE
 
 # Generic logicals
+declare TRUE=1
+declare FALSE=0
+
 declare ROOT_LOC=`pwd`
 declare MONGO_ROOT=mongo
 declare NODE_DEBUG=node-debug
 declare DB_BACKUP=backups
 declare SOURCE_ROOT=./source
+declare HAS_COMMON=$FALSE
 
 # durc logicals
 
@@ -50,6 +54,13 @@ function copy-content
 
 	# copy the source to the server
 	cp -r $SOURCE_ROOT/$APP_NAME/* $ROOT_LOC/$APP_NAME/.
+
+	# if the project has common stuff copy it
+	if [ $HAS_COMMON ]
+	then
+		cp -r $SOURCE_ROOT/common/* $ROOT_LOC/$APP_NAME/.
+	fi
+
 
 }
 
@@ -188,7 +199,7 @@ function remove-content
 		echo "WARNING DO NOT RUN IN PRODUCTION"
 	else
 		cd $ROOT_LOC
-        	#$MONGO_ROOT/bin/mongo $DB_APP -u $DB_APP_USER -p $DB_APP_PASS \
+        	#$MONGO_ROOT/bin/mongo $DB_APP -u $MONGO_APP_USER -p $MONGO_APP_PASS \
 		#	source/data/scripts/remove-app-content.js
 	fi
 }
@@ -200,17 +211,17 @@ function insert-content
 		echo "WARNING DO NOT RUN IN PRODUCTION"
 	else
 		cd $ROOT_LOC
-		$MONGO_ROOT/bin/mongo $DB_APP -u $DB_APP_USER -p $DB_APP_PASS \
+		$MONGO_ROOT/bin/mongo $DB_APP -u $MONGO_APP_USER -p $MONGO_APP_PASS \
 			$APP_NAME/data/scripts/create-app-content-home.js
-		$MONGO_ROOT/bin/mongo $DB_APP -u $DB_APP_USER -p $DB_APP_PASS \
+		$MONGO_ROOT/bin/mongo $DB_APP -u $MONGO_APP_USER -p $MONGO_APP_PASS \
 			$APP_NAME/data/scripts/create-app-content-events.js
-		$MONGO_ROOT/bin/mongo $DB_APP -u $DB_APP_USER -p $DB_APP_PASS \
+		$MONGO_ROOT/bin/mongo $DB_APP -u $MONGO_APP_USER -p $MONGO_APP_PASS \
 			$APP_NAME/data/scripts/create-app-content-community.js
-		$MONGO_ROOT/bin/mongo $DB_APP -u $DB_APP_USER -p $DB_APP_PASS \
+		$MONGO_ROOT/bin/mongo $DB_APP -u $MONGO_APP_USER -p $MONGO_APP_PASS \
 			$APP_NAME/data/scripts/create-app-content-vision.js
-		$MONGO_ROOT/bin/mongo $DB_APP -u $DB_APP_USER -p $DB_APP_PASS \
+		$MONGO_ROOT/bin/mongo $DB_APP -u $MONGO_APP_USER -p $MONGO_APP_PASS \
 			$APP_NAME/data/scripts/create-app-content-types.js
-		$MONGO_ROOT/bin/mongo $DB_APP -u $DB_APP_USER -p $DB_APP_PASS \
+		$MONGO_ROOT/bin/mongo $DB_APP -u $MONGO_APP_USER -p $MONGO_APP_PASS \
 			$APP_NAME/data/scripts/create-app-content-hire.js
 	fi
 	
@@ -350,7 +361,7 @@ function set-env-local
 	# components 
 	export DB_APP=localhost:$MONGO_PORT/$APP_NAME
 	export DB_NAME=$APP_NAME
-	export DB_URL_APP=mongodb://$DB_APP_USER:$DB_APP_PASS@$DB_APP
+	export DB_URL_APP=mongodb://$MONGO_APP_USER:$MONGO_APP_PASS@$DB_APP
 	export ENV=dev
 	set-env-common
 }
@@ -377,22 +388,34 @@ function set-app-auth
         export MONGO_APP_PASS=auth
 	export MONGO_PORT=27018
 	export MONGO_DATA_LOC=auth-data/db
+	set-env-local
 }
 
 function set-app-regi
 {
 	export PORT=8081
 	export APP_NAME='regi'
+        set-app-common
+	HAS_COMMON=$TRUE
+	set-env-local
 }
+
 
 function set-app-grub
 {
 	export PORT=8083
 	export APP_NAME='grub'
-        export MONGO_APP_USER=grub
+	set-app-common
+	HAS_COMMON=$TRUE
+	set-env-local
+}
+
+function set-app-common
+{
+	export MONGO_APP_USER=grub
         export MONGO_APP_PASS=grub
-	export MONGO_PORT=27019
-	export MONGO_DATA_LOC=grub-data/db
+        export MONGO_PORT=27020
+        export MONGO_DATA_LOC=grub-data/db
 }
 
 function set-env-heroku
@@ -403,14 +426,14 @@ function set-env-heroku
                         sed 's/.*mongodb:/mongodb:/'`
 
 	# Then parse it into compoents:
-	export DB_APP_USER=`echo $DB_URL_APP | \
+	export MONGO_APP_USER=`echo $DB_URL_APP | \
 			sed 's/mongodb:\/\///' | \
 			sed 's/:.*//'`
 	# Bit hacky but on heroku/mongolab the user and db name is the same
 
-	export DB_NAME=$DB_APP_USER
+	export DB_NAME=$MONGO_APP_USER
 
-	export DB_APP_PASS=`echo $DB_URL_APP | \
+	export MONGO_APP_PASS=`echo $DB_URL_APP | \
 			sed 's/mongodb:\/\///' | \
 			sed -E 's/[^:]*//' | \
 			sed 's/://' | \
@@ -427,8 +450,8 @@ function set-env-common
 
 	echo "DB_URL_APP:" $DB_URL_APP
 	echo "DB_NAME:" $DB_NAME
-	echo "DB_APP_USER:" $DB_APP_USER
-	echo "DB_APP_PASS:" $DB_APP_PASS
+	echo "MONGO_APP_USER:" $MONGO_APP_USER
+	echo "MONGO_APP_PASS:" $MONGO_APP_PASS
 	echo "DB_HOST:" $DB_HOST
 	echo "DB_PORT:" $DB_PORT
 	
@@ -474,7 +497,7 @@ function backup-mongo
 	DATE=`date +"%Y%m%d%H%m"`
 	for collection in contacts content contenttypes
 	do
-		$MONGO_ROOT/bin/mongoexport -h $DB_HOST:$DB_PORT -d $DB_NAME  -c $collection -u $DB_APP_USER -p $DB_APP_PASS --out $DB_BACKUP/$ENV/$DATE/$collection.json
+		$MONGO_ROOT/bin/mongoexport -h $DB_HOST:$DB_PORT -d $DB_NAME  -c $collection -u $MONGO_APP_USER -p $MONGO_APP_PASS --out $DB_BACKUP/$ENV/$DATE/$collection.json
 	done
 
 }
