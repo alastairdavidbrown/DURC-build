@@ -1,5 +1,11 @@
 #!/bin/bash
 # Build shell to go from basic linux build to running web server
+# Refactors - 
+# split our responsibilities into seperate scripts
+# Take all security info and get script into a repo
+# sort out the locigals for apps
+# make uptime like a 1st class app rather then specific 
+# deprecarte (?) heroku stuff
 
 # Constants
 # Debug
@@ -13,32 +19,40 @@ declare -i DEBUG_LEVEL=$DB_TRACE
 declare TRUE=1
 declare FALSE=0
 
+# Locations
 declare ROOT_LOC=`pwd`
 declare MONGO_ROOT=mongo
 declare NODE_DEBUG=node-debug
 declare DB_BACKUP=backups
 declare SOURCE_ROOT=./source
 declare HAS_COMMON=$FALSE
+declare MOONRAKER_LOC=$ROOT_LOC/moonraker
 
-# durc logicals
 
-# grub locigals
-declare MONGO_DATA_GRUB=grub-data/db
+
+#REFACTOR uptime should be an app like grub,durc etc not a aspecial casei
 declare MONGO_DATA_UPTIME=uptime-data/db
 declare UPTIME_LOC=./uptime
-declare MONGO_DURC_PORT=27017
-declare MONGO_GRUB_PORT=27018
-declare MONGO_UPTIME_PORT=27019
 
-# Registration Service config
-declare SVC_REGISTRATION_NAME=svc-registration
+# MongoDB distribution (bit messey to support OSX and Linux
+OS=`uname | sed 's/Darwin/osx/' | sed 's/Linux/linux/'`
+MONGO_DOWN_ROOT=https://fastdl.mongodb.org/
+MONGO_VERSION=mongodb-$OS-x86_64-3.2.0
+MONGO_DOWN_FMT=.tgz
 
-# Names
-declare MONGO=mongodb-osx-x86_64-3.0.3
-#declare MONGO=mongodb-osx-x86_64-2.6.10
+# Chrome Driver distribution (use OS from above)
+declare CHROME_DRIVER_LOC=http://chromedriver.storage.googleapis.com/2.21
+if [ $OS = 'osx' ]
+then
+	declare CHROME_DRIVER=chromedriver_mac32.zip
+elif [ $OS = 'linux' ]
+then
+	declare CHROME_DRIVER=chromedriver_linux64.zip
+fi
+declare CHROME_DRIVER_DIST=$CHROME_DRIVER_LOC/$CHROME_DRIVER
 
-declare MONGO_DIST=$MONGO.tgz
-
+# -------------------------------------------------
+# START - functions
 function debug
 {
 	db_level_set=$1
@@ -49,18 +63,12 @@ function debug
 	fi
 }
 
+
 function copy-content
 {
 
 	# copy the source to the server
 	cp -r $SOURCE_ROOT/$APP_NAME/* $ROOT_LOC/$APP_NAME/.
-
-	# if the project has common stuff copy it
-	if [ $HAS_COMMON ]
-	then
-		cp -r $SOURCE_ROOT/common/* $ROOT_LOC/$APP_NAME/.
-	fi
-
 
 }
 
@@ -166,12 +174,12 @@ function install-mongo-local
 	cd $MONGO_ROOT
 
 	# Download the distribution and untar it 
-	curl https://fastdl.mongodb.org/osx/$MONGO_DIST > $MONGO_DIST 
-	tar -zxvf $MONGO_DIST
+	curl $MONGO_DOWN_ROOT$OS/$MONGO_VERSION$MONGO_DOWN_FMT > $MONGO_VERSION$MONGO_DOWN_FMT
+	tar -zxvf $MONGO_VERSION$MONGO_DOWN_FMT
 
 	# Move to the mongo root and tidy up
-	mv -n $MONGO/* .
-	rmdir $MONGO
+	mv -n $MONGO_VERSION/* .
+	rmdir $MONGO_VERSION
 
 	cd $ROOT_LOC
 
@@ -212,17 +220,17 @@ function insert-content
 	else
 		cd $ROOT_LOC
 		$MONGO_ROOT/bin/mongo $DB_APP -u $MONGO_APP_USER -p $MONGO_APP_PASS \
-			$APP_NAME/data/scripts/create-app-content-home.js
+			source/$APP_NAME/data/scripts/create-app-content-home.js
 		$MONGO_ROOT/bin/mongo $DB_APP -u $MONGO_APP_USER -p $MONGO_APP_PASS \
-			$APP_NAME/data/scripts/create-app-content-events.js
+			source/$APP_NAME/data/scripts/create-app-content-events.js
 		$MONGO_ROOT/bin/mongo $DB_APP -u $MONGO_APP_USER -p $MONGO_APP_PASS \
-			$APP_NAME/data/scripts/create-app-content-community.js
+			source/$APP_NAME/data/scripts/create-app-content-community.js
 		$MONGO_ROOT/bin/mongo $DB_APP -u $MONGO_APP_USER -p $MONGO_APP_PASS \
-			$APP_NAME/data/scripts/create-app-content-vision.js
+			source/$APP_NAME/data/scripts/create-app-content-vision.js
 		$MONGO_ROOT/bin/mongo $DB_APP -u $MONGO_APP_USER -p $MONGO_APP_PASS \
-			$APP_NAME/data/scripts/create-app-content-types.js
+			source/$APP_NAME/data/scripts/create-app-content-types.js
 		$MONGO_ROOT/bin/mongo $DB_APP -u $MONGO_APP_USER -p $MONGO_APP_PASS \
-			$APP_NAME/data/scripts/create-app-content-hire.js
+			source/$APP_NAME/data/scripts/create-app-content-hire.js
 	fi
 	
 }
@@ -301,10 +309,12 @@ function wait-for-mongo-to-stop
 function start-mongo-all
 {
 
+	declare MONGO_DURC_PORT=27017
 	# The application mongo instance
 	start-mongo-1 $MONGO_DURC_PORT $MONGO_ROOT/$MONGO_DATA_DURC mongo-durc.log
 	
 	# The uptime mongo instance
+	declare MONGO_UPTIME_PORT=27019
 	start-mongo-1 $MONGO_UPTIME_PORT $MONGO_ROOT/$MONGO_DATA_UPTIME mongo-uptime.log --setParameter authenticationMechanisms=MONGODB-CR --auth
 
 	#ps -ef | egrep -i mongod | egrep -v egrep 
@@ -340,6 +350,12 @@ function stop-mongo
 	stop-proc mongod
 }
 
+function stop-all
+{
+	stop-proc node
+	stop-proc mongo
+}
+
 function stop-proc
 {
 	# find the  pid of the named process, excluding this script 
@@ -357,13 +373,18 @@ function help
 
 function set-env-local
 {
-	echo "... environment is local" 
+	echo "... setting environment as local" 
+	set-env-common
+}
+
+function set-mongo-env
+{
+
 	# components 
 	export DB_APP=localhost:$MONGO_PORT/$APP_NAME
 	export DB_NAME=$APP_NAME
 	export DB_URL_APP=mongodb://$MONGO_APP_USER:$MONGO_APP_PASS@$DB_APP
 	export ENV=dev
-	set-env-common
 }
 
 # grub locigals
@@ -378,6 +399,7 @@ function set-app-durc
         export MONGO_APP_PASS=durc
 	export MONGO_PORT=27017
 	export MONGO_DATA_LOC=durc-data/db
+	set-mongo-env
 }
 
 function set-app-auth
@@ -388,34 +410,51 @@ function set-app-auth
         export MONGO_APP_PASS=auth
 	export MONGO_PORT=27018
 	export MONGO_DATA_LOC=auth-data/db
-	set-env-local
+	set-mongo-env
 }
 
-function set-app-regi
+function set-app-emco
 {
 	export PORT=8081
-	export APP_NAME='regi'
-        set-app-common
-	HAS_COMMON=$TRUE
-	set-env-local
+	export APP_NAME='emco'
+	export MONGO_APP_USER=emco
+        export MONGO_APP_PASS=emco
+        export MONGO_PORT=27021
+        export MONGO_DATA_LOC=emco-data/db
+	set-mongo-env
 }
 
+
+function set-app-lrma
+{
+
+	export PORT=8084
+	export APP_NAME='lrma'
+}
+
+function set-app-esss
+{
+
+	export PORT=8085
+	export APP_NAME='esss'
+}
 
 function set-app-grub
 {
 	export PORT=8083
 	export APP_NAME='grub'
-	set-app-common
-	HAS_COMMON=$TRUE
-	set-env-local
-}
-
-function set-app-common
-{
 	export MONGO_APP_USER=grub
         export MONGO_APP_PASS=grub
         export MONGO_PORT=27020
         export MONGO_DATA_LOC=grub-data/db
+	set-mongo-env
+}
+
+function set-app-common
+{
+	# Place holder to put configuration shared between apps
+	# function must have content!
+	show-config
 }
 
 function set-env-heroku
@@ -438,23 +477,35 @@ function set-env-heroku
 			sed -E 's/[^:]*//' | \
 			sed 's/://' | \
 			sed 's/@.*//'`
+
+#	export DB_HOST=`echo $DB_URL_APP | \
+#			sed 's/.*@//' | \
+#			sed 's/:.*//'
+#
 	export ENV=prod
 	set-env-common
 }
 
 function set-env-common
 {
+	export MONGO_ROOT=mongo
 	export DB_APP=`echo $DB_URL_APP | sed 's/.*@//'`
 	export DB_HOST=`echo $DB_APP | sed 's/:.*//'`
 	export DB_PORT=`echo $DB_APP | sed 's/.*://' | sed 's/\/.*//'`
 
-	echo "DB_URL_APP:" $DB_URL_APP
-	echo "DB_NAME:" $DB_NAME
-	echo "MONGO_APP_USER:" $MONGO_APP_USER
-	echo "MONGO_APP_PASS:" $MONGO_APP_PASS
-	echo "DB_HOST:" $DB_HOST
-	echo "DB_PORT:" $DB_PORT
 	
+}
+
+function show-config
+{
+	for var in APP_NAME DB_URL_APP DB_NAME MONGO_APP_USER MONGO_APP_PASS DB_HOST DB_PORT
+	do
+		eval val=\$$var
+		if [ ! -z $val ]
+		then
+			echo "$var $val"
+		fi
+	done
 }
 
 function install-uptime
@@ -470,6 +521,7 @@ function install-inspector
 	mkdir $NODE_DEBUG
 	cd $NODE_DEBUG
 	npm install node-debug
+	#mv ./node_modules/node-debug/* .
 	# node-inspector might be a dependency
 	
 }
@@ -484,11 +536,51 @@ function cycle-debug
 {
 	stop-debug	
 	copy-content
-	cd $ROOT_LOC
 	cd $APP_NAME
-	# adjust the applications port si it doesn't collide with node-debug
+	# adjust the applications port so it doesn't collide with node-debug
 	export PORT=8090
-	../node-debug/node_modules/node-inspector/bin/node-debug.js server.js  & 	
+	# Path hack... 
+	../node-debug/node_modules/node-debug/bin/node-debug.js grub_server.js  & 	
+}
+
+function clean-test-rig
+{
+	rm -r $ROOT_LOC/moonraker
+}
+
+function make-test-rig
+{
+	#install moonraker
+	mkdir $MOONRAKER_LOC
+	cp $SOURCE_ROOT/$APP_NAME/tests/package.json $MOONRAKER_LOC/.
+	cd $MOONRAKER_LOC
+	npm install
+
+	# Get the chrome driver and put it on the path
+	curl $CHROME_DRIVER_DIST > $CHROME_DRIVER
+	unzip $CHROME_DRIVER
+	cd $ROOT_LOC
+}
+
+function run-tests
+{
+
+	# Check moonraker installed
+	if [ ! -d $MOONRAKER_LOC ]
+	then
+		make-test-rig
+	fi
+	#copy the tests to the moonraker install
+	cp -r $SOURCE_ROOT/$APP_NAME/* $MOONRAKER_LOC/.
+	cd $MOONRAKER_LOC
+	mv ./tests/config.json .
+
+	# Put the chrome driver on the path
+	PATH=$PATH:$MOONRAKER_LOC/$CHROME_DRIVER
+	node node_modules/moonraker/bin/moonraker.js 
+
+	cd $ROOT_LOC
+
 }
 
 function backup-mongo
@@ -502,18 +594,10 @@ function backup-mongo
 
 }
 
-
-# main!
-# Call the function that matches the first parameters name
-#set-env-local
+# ----------------------------------
+# MAIN!  
+set-env-local
 #set-env-heroku
-# Check that an environemnt (local|heroku) is set 
-# as is an APP to build 
-if [ -z $APP_NAME ] || [ -z $DB_URL_APP ]
-then
-	echo "APP_NAME and DB_URL_APP unset, defaulting to local durc-app"
-	set-env-local
-	set-app-durc
-fi
+
+# Call the function that matches the first parameters name
 ${1} $@
-echo "Operation completed on $APP_NAME"
