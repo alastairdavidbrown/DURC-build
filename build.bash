@@ -12,7 +12,8 @@ declare TRUE=1
 declare FALSE=0
 
 # Locations
-declare ROOT_LOC=`pwd`
+declare CURR_LOC=`pwd`
+declare ROOT_LOC=~/Documents/DURC/
 declare MONGO_ROOT=mongo
 declare NODE_DEBUG=node-debug
 declare DB_BACKUP=backups
@@ -242,4 +243,6 @@ function show-config
 set-env-local
 
 # Call the function that matches the first parameters name
+cd $ROOT_LOC
 ${1} $@
+cd $CURR_LOC

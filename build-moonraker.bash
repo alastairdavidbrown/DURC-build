@@ -28,27 +28,16 @@ function make-test-rig
         # Get the chrome driver and put it on the path
         curl $CHROME_DRIVER_DIST > $CHROME_DRIVER
         unzip $CHROME_DRIVER
+
+	mkdir $MOONRAKER_LOC/tests
         cd $ROOT_LOC
 }
 
-function clean-test-rig
-{       
-        rm -r $ROOT_LOC/moonraker
-}       
-        
-function make-test-rig
+function run-tests
 {
-        #install moonraker
-        mkdir $MOONRAKER_LOC
-        cp $SOURCE_ROOT/$APP_NAME/tests/package.json $MOONRAKER_LOC/.
-        cd $MOONRAKER_LOC
-        npm install
-
-        # Get the chrome driver and put it on the path
-        curl $CHROME_DRIVER_DIST > $CHROME_DRIVER
-        unzip $CHROME_DRIVER
-        cd $ROOT_LOC
+	cp -r $SOURCE_ROOT/$APP_NAME/tests/*.json $MOONRAKER_LOC/.
+	cp -r $SOURCE_ROOT/$APP_NAME/tests/* $MOONRAKER_LOC/tests/.
+	cd $MOONRAKER_LOC
+	node node_modules/moonraker/bin/moonraker.js 
 }
-
-
 
