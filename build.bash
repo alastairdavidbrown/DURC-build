@@ -182,6 +182,20 @@ function set-app-emco
 }
 
 
+function set-app-brda
+{
+
+	export PORT=8086
+	export APP_NAME='brda'
+}
+
+function set-app-brma
+{
+
+	export PORT=8087
+	export APP_NAME='brma'
+}
+
 function set-app-lrma
 {
 
